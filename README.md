@@ -1,5 +1,8 @@
 # 🌿 The Plant Doctor: AI-Powered Botanical Diagnostics
 
+# The Live Website Link: 
+https://piyus-plant-doctor.streamlit.app/
+
 ## 📌 Project Overview
 The Plant Doctor is a stateful, full-stack web application designed to diagnose plant health issues using advanced multimodal AI. Users can upload images of their houseplants, and the system instantly identifies the species, diagnoses cellular distress (e.g., chlorosis, necrosis), calculates a quantitative Vitality Score, and generates an interactive care plan.
 
