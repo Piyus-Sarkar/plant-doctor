@@ -32,7 +32,7 @@ with tab1:
                 form_data = {"city": city_input} # Sending the city to FastAPI
                 
                 try:
-                    response = requests.post("http://127.0.0.1:8000/upload-photo/", files=files, data=form_data)
+                    response = requests.post("https://plant-doctor-buxp.onrender.com/upload-photo/", files=files, data=form_data)
                     if response.status_code == 200:
                         st.session_state["current_diagnosis"] = response.json()
                     else:
@@ -90,7 +90,7 @@ with tab2:
 
     # REMOVED the "st.button" wrapper! The dashboard now loads automatically, fixing the bug.
     try:
-        response = requests.get("http://127.0.0.1:8000/plants/")
+        response = requests.get("https://plant-doctor-buxp.onrender.com/plants/")
         if response.status_code == 200:
             plants = response.json()
 
@@ -115,7 +115,7 @@ with tab2:
                                 # --- NEW: INDIVIDUAL RECORD DELETE BUTTON ---
                                 if st.button("🗑️ Delete this Record", key=f"del_rec_{record['id']}", help="Erase this specific visit"):
                                     try:
-                                        res = requests.delete(f"http://127.0.0.1:8000/diagnoses/{record['id']}")
+                                        res = requests.delete(f"https://plant-doctor-buxp.onrender.com/diagnoses/{record['id']}")
                                         if res.status_code == 200:
                                             st.success("Record erased! Refreshing...")
                                             time.sleep(0.5)
@@ -143,7 +143,7 @@ with tab2:
         if search_query:
             with st.spinner("Analyzing case files..."):
                 try:
-                    response = requests.get("http://127.0.0.1:8000/diagnoses/search/", params={"query": search_query})
+                    response = requests.get("https://plant-doctor-buxp.onrender.com/diagnoses/search/", params={"query": search_query})
 
                     if response.status_code == 200:
                         matches = response.json()
