@@ -1,0 +1,16 @@
+# Environments
+venv/
+env/
+
+# Secrets
+.env
+
+# Database (We don't want to upload local test data to the live server)
+*.db
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# OS Files
+.DS_Store

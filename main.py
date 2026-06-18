@@ -1,0 +1,326 @@
+import os
+import shutil
+from fastapi import FastAPI, UploadFile, File, Depends
+from sqlalchemy.orm import Session
+from database import engine, SessionLocal
+import models
+from ai_services import diagnose_plant_with_vision # Import your Gemini engine!
+from fastapi import FastAPI, UploadFile, File, Depends, Form
+import requests
+import math
+import json
+from ai_services import diagnose_plant_with_vision, generate_text_embedding
+from fastapi import HTTPException
+
+
+# Create database tables
+models.Base.metadata.create_all(bind=engine)
+
+app = FastAPI(title="Plant Doctor API", version="1.0")
+
+# Database gateway dependency
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to the Plant Doctor API! 🌿 Server is running perfectly."}
+
+def get_live_weather(city: str):
+    """Fetches live weather data from the free Open-Meteo API."""
+    try:
+        # 1. Convert City Name to Latitude/Longitude
+        geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&format=json"
+        geo_data = requests.get(geo_url).json()
+
+        if not geo_data.get("results"):
+            return f"Unknown weather conditions in {city}"
+
+        lat = geo_data["results"][0]["latitude"]
+        lon = geo_data["results"][0]["longitude"]
+
+        # 2. Get the actual weather for those coordinates
+        weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true"
+        weather_data = requests.get(weather_url).json()
+
+        temp = weather_data["current_weather"]["temperature"]
+        return f"{city} with a current temperature of {temp}°C"
+    except Exception:
+        return f"Unknown weather conditions in {city}"
+
+# Add city: str = Form(...) to the parameters
+@app.post("/upload-photo/")
+async def upload_photo(file: UploadFile = File(...), city: str = Form("Unknown"), db: Session = Depends(get_db)):
+
+    file_location = f"uploads/{file.filename}"
+    with open(file_location, "wb+") as file_object:
+        shutil.copyfileobj(file.file, file_object)
+
+    plant = db.query(models.Plant).first()
+    previous_diagnosis_text = None
+
+    if not plant:
+        plant = models.Plant(location="Indoor", species="Pending AI ID")
+        db.add(plant)
+        db.commit()
+        db.refresh(plant)
+    else:
+        last_diagnosis = db.query(models.Diagnosis).filter(models.Diagnosis.plant_id == plant.id).order_by(models.Diagnosis.id.desc()).first()
+        if last_diagnosis:
+            previous_diagnosis_text = last_diagnosis.description
+
+    new_photo = models.Photo(filepath=file_location, plant_id=plant.id)
+    db.add(new_photo)
+    db.commit()
+
+    # --- NEW: GET WEATHER AND PASS TO AI ---
+    current_weather = get_live_weather(city)
+    ai_response = diagnose_plant_with_vision(
+        image_path=file_location, 
+        previous_diagnosis=previous_diagnosis_text,
+        environment_data=current_weather
+    )
+
+    # (Keep the rest of the route exactly the same as before...)
+    if "error" in ai_response:
+        return {"message": "AI Error", "diagnosis": ai_response["error"]}
+
+    plant.species = ai_response["species"]
+    db.commit()
+
+    new_diagnosis = models.Diagnosis(
+        symptom_category=ai_response["category"], 
+        description=ai_response["description"], 
+        health_score=ai_response["health_score"], 
+        plant_id=plant.id
+    )
+    db.add(new_diagnosis)
+
+    for task_text in ai_response["tasks"]:
+        new_task = models.CareTask(task_description=task_text, plant_id=plant.id)
+        db.add(new_task)
+
+    db.commit()
+
+    return {
+        "message": "Photo analyzed!",
+        "filename": file.filename,
+        "diagnosis_data": ai_response,
+        "weather_context": current_weather # Send the weather to the frontend!
+    }
+
+@app.get("/plants/")
+def get_all_plants(db: Session = Depends(get_db)):
+    # 1. Fetch every plant
+    plants = db.query(models.Plant).all()
+    dashboard_data = []
+    
+    for plant in plants:
+        # 2. Fetch ALL photos and ALL diagnoses for this specific plant (newest first)
+        all_photos = db.query(models.Photo).filter(models.Photo.plant_id == plant.id).order_by(models.Photo.id.desc()).all()
+        all_diagnoses = db.query(models.Diagnosis).filter(models.Diagnosis.plant_id == plant.id).order_by(models.Diagnosis.id.desc()).all()
+        
+        # 3. If the plant has records, zip them together into a timeline
+        if all_photos and all_diagnoses:
+            history_list = []
+            
+            # The zip() function perfectly pairs the photo with its matching diagnosis
+            for photo, diagnosis in zip(all_photos, all_diagnoses):
+                
+                # Format the timestamp so it looks pretty (e.g., "June 25, 2026 - 14:30")
+                nice_date = photo.taken_at.strftime("%B %d, %Y - %H:%M") if photo.taken_at else "Unknown Date"
+                
+                history_list.append({
+                    "id": diagnosis.id,
+                    "date": nice_date,
+                    "category": diagnosis.symptom_category,
+                    "description": diagnosis.description,
+                    "photo_path": photo.filepath # We map the exact photo for this specific visit!
+                })
+                
+            dashboard_data.append({
+                "plant_id": plant.id,
+                "species": plant.species,
+                "history": history_list # Ship the entire timeline to the frontend
+            })
+            
+    return dashboard_data
+
+def compute_cosine_similarity(vector_a, vector_b):
+    """Calculates the cosine similarity metric between two dense vector arrays."""
+    dot_product = sum(x * y for x, y in zip(vector_a, vector_b))
+    magnitude_a = math.sqrt(sum(x * x for x in vector_a))
+    magnitude_b = math.sqrt(sum(y * y for y in vector_b))
+    if not magnitude_a or not magnitude_b:
+        return 0.0
+    return dot_product / (magnitude_a * magnitude_b)
+
+@app.post("/upload-photo/")
+async def upload_photo(file: UploadFile = File(...), city: str = Form("Unknown"), db: Session = Depends(get_db)):
+    file_location = f"uploads/{file.filename}"
+    with open(file_location, "wb+") as file_object:
+        shutil.copyfileobj(file.file, file_object)
+        
+    plant = db.query(models.Plant).first()
+    previous_diagnosis_text = None
+    
+    if not plant:
+        plant = models.Plant(location="Indoor", species="Pending AI ID")
+        db.add(plant)
+        db.commit()
+        db.refresh(plant)
+    else:
+        last_diagnosis = db.query(models.Diagnosis).filter(models.Diagnosis.plant_id == plant.id).order_by(models.Diagnosis.id.desc()).first()
+        if last_diagnosis:
+            previous_diagnosis_text = last_diagnosis.description
+            
+    new_photo = models.Photo(filepath=file_location, plant_id=plant.id)
+    db.add(new_photo)
+    db.commit()
+
+    current_weather = get_live_weather(city)
+    ai_response = diagnose_plant_with_vision(
+        image_path=file_location, 
+        previous_diagnosis=previous_diagnosis_text,
+        environment_data=current_weather
+    )
+    
+    if "error" in ai_response:
+        return {"message": "AI Error", "diagnosis": ai_response["error"]}
+
+    plant.species = ai_response["species"]
+    db.commit()
+
+    # --- VECTOR GENERATION ON STORAGE ---
+    description_text = ai_response["description"]
+    vector_array = generate_text_embedding(description_text)
+    serialized_vector = json.dumps(vector_array) if vector_array else None
+
+    new_diagnosis = models.Diagnosis(
+        symptom_category=ai_response["category"], 
+        description=description_text, 
+        health_score=ai_response["health_score"], 
+        embedding=serialized_vector,
+        plant_id=plant.id
+    )
+    db.add(new_diagnosis)
+    
+    for task_text in ai_response["tasks"]:
+        new_task = models.CareTask(task_description=task_text, plant_id=plant.id)
+        db.add(new_task)
+        
+    db.commit()
+        
+    return {
+        "message": "Photo analyzed!",
+        "filename": file.filename,
+        "diagnosis_data": ai_response,
+        "weather_context": current_weather
+    }
+
+
+@app.get("/diagnoses/search/")
+def semantic_search_case_files(query: str, db: Session = Depends(get_db)):
+    """Surfaces relevant records and perfectly matches the historical photo."""
+    query_vector = generate_text_embedding(query)
+    plants = db.query(models.Plant).all()
+    search_results = []
+    
+    for plant in plants:
+        # 1. Fetch all photos and diagnoses for this specific plant
+        all_photos = db.query(models.Photo).filter(models.Photo.plant_id == plant.id).order_by(models.Photo.id.desc()).all()
+        all_diagnoses = db.query(models.Diagnosis).filter(models.Diagnosis.plant_id == plant.id).order_by(models.Diagnosis.id.desc()).all()
+        
+        # 2. ZIP them together exactly like the dashboard so the right photo stays with the right text!
+        for photo, record in zip(all_photos, all_diagnoses):
+            match_score = 0.0
+            
+            if record.embedding and query_vector:
+                record_vector = json.loads(record.embedding)
+                match_score = compute_cosine_similarity(query_vector, record_vector) * 100
+            elif query.lower() in record.description.lower() or query.lower() in record.symptom_category.lower():
+                match_score = 85.0
+                
+            if match_score > 10.0:
+                search_results.append({
+                    "diagnosis_id": record.id,
+                    "species": plant.species,
+                    "category": record.symptom_category,
+                    "description": record.description,
+                    "score": record.health_score,
+                    "match_accuracy": round(match_score, 2),
+                    "photo_path": photo.filepath # Perfectly matched photo!
+                })
+                
+    search_results.sort(key=lambda item: item["match_accuracy"], reverse=True)
+    return search_results[:3]
+
+
+@app.delete("/plants/{plant_id}")
+def delete_plant_record(plant_id: int, db: Session = Depends(get_db)):
+    """Safely deletes a plant by removing individual items one-by-one to prevent SQL locks."""
+    plant = db.query(models.Plant).filter(models.Plant.id == plant_id).first()
+    if not plant:
+        raise HTTPException(status_code=404, detail="Plant not found")
+        
+    try:
+        # Explicitly delete items one by one instead of bulk deleting
+        for p in db.query(models.Photo).filter(models.Photo.plant_id == plant_id).all():
+            db.delete(p)
+            
+        for d in db.query(models.Diagnosis).filter(models.Diagnosis.plant_id == plant_id).all():
+            db.delete(d)
+            
+        for t in db.query(models.CareTask).filter(models.CareTask.plant_id == plant_id).all():
+            db.delete(t)
+            
+        # Finally, delete the plant
+        db.delete(plant)
+        db.commit()
+        
+        return {"message": "Success"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.delete("/diagnoses/{diagnosis_id}")
+def delete_single_diagnosis(diagnosis_id: int, db: Session = Depends(get_db)):
+    """Deletes a specific historical visit without deleting the whole patient."""
+    try:
+        diagnosis = db.query(models.Diagnosis).filter(models.Diagnosis.id == diagnosis_id).first()
+        if not diagnosis:
+            raise HTTPException(status_code=404, detail="Record not found")
+
+        plant_id = diagnosis.plant_id
+
+        # 1. Find and delete the perfectly matching photo to keep the timeline aligned
+        all_diagnoses = db.query(models.Diagnosis).filter(models.Diagnosis.plant_id == plant_id).order_by(models.Diagnosis.id.desc()).all()
+        all_photos = db.query(models.Photo).filter(models.Photo.plant_id == plant_id).order_by(models.Photo.id.desc()).all()
+
+        try:
+            index = [d.id for d in all_diagnoses].index(diagnosis_id)
+            db.delete(all_photos[index])
+        except (ValueError, IndexError):
+            pass
+
+        # 2. Delete the diagnosis text
+        db.delete(diagnosis)
+        db.commit()
+
+        # 3. Clean up the plant entirely if it has no history left
+        remaining = db.query(models.Diagnosis).filter(models.Diagnosis.plant_id == plant_id).count()
+        if remaining == 0:
+            db.query(models.CareTask).filter(models.CareTask.plant_id == plant_id).delete(synchronize_session=False)
+            plant = db.query(models.Plant).filter(models.Plant.id == plant_id).first()
+            if plant:
+                db.delete(plant)
+            db.commit()
+
+        return {"message": "Visit deleted"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
