@@ -34,17 +34,20 @@ def read_root():
     return {"message": "Welcome to the Plant Doctor API! 🌿 Server is running perfectly."}
 
 def get_live_weather(city: str):
-    """Fetches live weather data from the free Open-Meteo API."""
+    """Fetches live weather data, with a bulletproof fallback for Kolkata."""
     try:
         # 1. Convert City Name to Latitude/Longitude
         geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&format=json"
-        geo_data = requests.get(geo_url).json()
-
-        if not geo_data.get("results"):
-            return f"Unknown weather conditions in {city}"
-
-        lat = geo_data["results"][0]["latitude"]
-        lon = geo_data["results"][0]["longitude"]
+        geo_response = requests.get(geo_url)
+        
+        # If the geocoding API blocks the cloud server, use exact Kolkata coordinates
+        if geo_response.status_code != 200 or not geo_response.json().get("results"):
+            lat, lon = 22.5726, 88.3639 # Exact coordinates for Kolkata
+            city = "Kolkata (Fallback)"
+        else:
+            geo_data = geo_response.json()
+            lat = geo_data["results"][0]["latitude"]
+            lon = geo_data["results"][0]["longitude"]
 
         # 2. Get the actual weather for those coordinates
         weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true"
@@ -58,14 +61,13 @@ def get_live_weather(city: str):
 # Add city: str = Form(...) to the parameters
 @app.post("/upload-photo/")
 async def upload_photo(file: UploadFile = File(...), city: str = Form("Unknown"), db: Session = Depends(get_db)):
-
     file_location = f"uploads/{file.filename}"
     with open(file_location, "wb+") as file_object:
         shutil.copyfileobj(file.file, file_object)
-
+        
     plant = db.query(models.Plant).first()
     previous_diagnosis_text = None
-
+    
     if not plant:
         plant = models.Plant(location="Indoor", species="Pending AI ID")
         db.add(plant)
@@ -75,49 +77,55 @@ async def upload_photo(file: UploadFile = File(...), city: str = Form("Unknown")
         last_diagnosis = db.query(models.Diagnosis).filter(models.Diagnosis.plant_id == plant.id).order_by(models.Diagnosis.id.desc()).first()
         if last_diagnosis:
             previous_diagnosis_text = last_diagnosis.description
-
+            
     new_photo = models.Photo(filepath=file_location, plant_id=plant.id)
     db.add(new_photo)
     db.commit()
-    # Calculate Indian Standard Time (UTC + 5:30)
+
+    # --- FORCED IST TIMEZONE ---
     ist_timezone = timezone(timedelta(hours=5, minutes=30))
     current_ist_time = datetime.now(ist_timezone).strftime("%B %d, %Y - %H:%M")
 
-    # --- NEW: GET WEATHER AND PASS TO AI ---
+    # --- GET WEATHER AND PASS TO AI ---
     current_weather = get_live_weather(city)
     ai_response = diagnose_plant_with_vision(
         image_path=file_location, 
         previous_diagnosis=previous_diagnosis_text,
         environment_data=current_weather
     )
-
-    # (Keep the rest of the route exactly the same as before...)
+    
     if "error" in ai_response:
         return {"message": "AI Error", "diagnosis": ai_response["error"]}
 
     plant.species = ai_response["species"]
     db.commit()
 
+    # --- VECTOR GENERATION ---
+    description_text = ai_response["description"]
+    vector_array = generate_text_embedding(description_text)
+    serialized_vector = json.dumps(vector_array) if vector_array else None
+
     new_diagnosis = models.Diagnosis(
         symptom_category=ai_response["category"], 
-        description=ai_response["description"], 
+        description=description_text, 
         health_score=ai_response["health_score"], 
+        embedding=serialized_vector,
         plant_id=plant.id,
-        date=current_ist_time
+        date=current_ist_time  # <--- The IST time is successfully saved to the database here!
     )
     db.add(new_diagnosis)
-
+    
     for task_text in ai_response["tasks"]:
         new_task = models.CareTask(task_description=task_text, plant_id=plant.id)
         db.add(new_task)
-
+        
     db.commit()
-
+        
     return {
         "message": "Photo analyzed!",
         "filename": file.filename,
         "diagnosis_data": ai_response,
-        "weather_context": current_weather # Send the weather to the frontend!
+        "weather_context": current_weather
     }
 
 @app.get("/plants/")
@@ -166,68 +174,6 @@ def compute_cosine_similarity(vector_a, vector_b):
         return 0.0
     return dot_product / (magnitude_a * magnitude_b)
 
-@app.post("/upload-photo/")
-async def upload_photo(file: UploadFile = File(...), city: str = Form("Unknown"), db: Session = Depends(get_db)):
-    file_location = f"uploads/{file.filename}"
-    with open(file_location, "wb+") as file_object:
-        shutil.copyfileobj(file.file, file_object)
-        
-    plant = db.query(models.Plant).first()
-    previous_diagnosis_text = None
-    
-    if not plant:
-        plant = models.Plant(location="Indoor", species="Pending AI ID")
-        db.add(plant)
-        db.commit()
-        db.refresh(plant)
-    else:
-        last_diagnosis = db.query(models.Diagnosis).filter(models.Diagnosis.plant_id == plant.id).order_by(models.Diagnosis.id.desc()).first()
-        if last_diagnosis:
-            previous_diagnosis_text = last_diagnosis.description
-            
-    new_photo = models.Photo(filepath=file_location, plant_id=plant.id)
-    db.add(new_photo)
-    db.commit()
-
-    current_weather = get_live_weather(city)
-    ai_response = diagnose_plant_with_vision(
-        image_path=file_location, 
-        previous_diagnosis=previous_diagnosis_text,
-        environment_data=current_weather
-    )
-    
-    if "error" in ai_response:
-        return {"message": "AI Error", "diagnosis": ai_response["error"]}
-
-    plant.species = ai_response["species"]
-    db.commit()
-
-    # --- VECTOR GENERATION ON STORAGE ---
-    description_text = ai_response["description"]
-    vector_array = generate_text_embedding(description_text)
-    serialized_vector = json.dumps(vector_array) if vector_array else None
-
-    new_diagnosis = models.Diagnosis(
-        symptom_category=ai_response["category"], 
-        description=description_text, 
-        health_score=ai_response["health_score"], 
-        embedding=serialized_vector,
-        plant_id=plant.id
-    )
-    db.add(new_diagnosis)
-    
-    for task_text in ai_response["tasks"]:
-        new_task = models.CareTask(task_description=task_text, plant_id=plant.id)
-        db.add(new_task)
-        
-    db.commit()
-        
-    return {
-        "message": "Photo analyzed!",
-        "filename": file.filename,
-        "diagnosis_data": ai_response,
-        "weather_context": current_weather
-    }
 
 
 @app.get("/diagnoses/search/")
