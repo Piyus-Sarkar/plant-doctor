@@ -34,29 +34,38 @@ def read_root():
     return {"message": "Welcome to the Plant Doctor API! 🌿 Server is running perfectly."}
 
 def get_live_weather(city: str):
-    """Fetches live weather data, with a bulletproof fallback for Kolkata."""
+    """Fetches live weather data securely, bypassing cloud blocks."""
     try:
-        # 1. Convert City Name to Latitude/Longitude
-        geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&format=json"
-        geo_response = requests.get(geo_url)
+        # 1. Add a 'Nametag' so Open-Meteo knows we aren't a spam bot
+        headers = {"User-Agent": "PlantDoctorCapstone/1.0"}
         
-        # If the geocoding API blocks the cloud server, use exact Kolkata coordinates
-        if geo_response.status_code != 200 or not geo_response.json().get("results"):
-            lat, lon = 22.5726, 88.3639 # Exact coordinates for Kolkata
-            city = "Kolkata (Fallback)"
-        else:
-            geo_data = geo_response.json()
-            lat = geo_data["results"][0]["latitude"]
-            lon = geo_data["results"][0]["longitude"]
-
-        # 2. Get the actual weather for those coordinates
-        weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true"
-        weather_data = requests.get(weather_url).json()
-
+        # 2. Use 'params' so spaces in city names (like "New Delhi") are handled safely
+        geo_url = "https://geocoding-api.open-meteo.com/v1/search"
+        geo_params = {"name": city, "count": 1, "format": "json"}
+        
+        geo_response = requests.get(geo_url, params=geo_params, headers=headers, timeout=5)
+        geo_data = geo_response.json()
+        
+        # If the user types a city that doesn't exist
+        if not geo_data.get("results"):
+            return f"Weather unavailable for {city} (City not found)"
+            
+        lat = geo_data["results"][0]["latitude"]
+        lon = geo_data["results"][0]["longitude"]
+        clean_city_name = geo_data["results"][0]["name"] # Formats it nicely!
+        
+        # 3. Fetch the actual temperature for those coordinates
+        weather_url = "https://api.open-meteo.com/v1/forecast"
+        weather_params = {"latitude": lat, "longitude": lon, "current_weather": "true"}
+        
+        weather_response = requests.get(weather_url, params=weather_params, headers=headers, timeout=5)
+        weather_data = weather_response.json()
+        
         temp = weather_data["current_weather"]["temperature"]
-        return f"{city} with a current temperature of {temp}°C"
-    except Exception:
-        return f"Unknown weather conditions in {city}"
+        return f"{clean_city_name} with a current temperature of {temp}°C"
+        
+    except Exception as e:
+        return f"Weather lookup failed for {city} (Using standard environment context)"
 
 # Add city: str = Form(...) to the parameters
 @app.post("/upload-photo/")
