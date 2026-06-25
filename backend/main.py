@@ -2,14 +2,14 @@ import os
 import shutil
 from fastapi import FastAPI, UploadFile, File, Depends
 from sqlalchemy.orm import Session
-from backend.database import engine, SessionLocal
-import backend.models as models
-from backend.ai_services import diagnose_plant_with_vision # Import your Gemini engine!
+from database import engine, SessionLocal
+import models as models
+from ai_services import diagnose_plant_with_vision # Import your Gemini engine!
 from fastapi import FastAPI, UploadFile, File, Depends, Form
 import requests
 import math
 import json
-from backend.ai_services import diagnose_plant_with_vision, generate_text_embedding
+from ai_services import diagnose_plant_with_vision, generate_text_embedding
 from fastapi import HTTPException
 
 
