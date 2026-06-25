@@ -130,7 +130,7 @@ with tab2:
         else:
             st.error("Failed to load dashboard data.")
     except Exception as e:
-        st.error("Backend server is not running.")
+        st.error(f"The TRUE error is: {str(e)}")
 
     # --- SEMANTIC SEARCH SECTOR ---
     st.markdown("---")
