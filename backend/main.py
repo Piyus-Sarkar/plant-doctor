@@ -12,6 +12,7 @@ import json
 from ai_services import diagnose_plant_with_vision, generate_text_embedding
 from fastapi import HTTPException
 from fastapi.staticfiles import StaticFiles
+from datetime import datetime, timezone, timedelta
 
 
 # Create database tables
@@ -78,6 +79,9 @@ async def upload_photo(file: UploadFile = File(...), city: str = Form("Unknown")
     new_photo = models.Photo(filepath=file_location, plant_id=plant.id)
     db.add(new_photo)
     db.commit()
+    # Calculate Indian Standard Time (UTC + 5:30)
+    ist_timezone = timezone(timedelta(hours=5, minutes=30))
+    current_ist_time = datetime.now(ist_timezone).strftime("%B %d, %Y - %H:%M")
 
     # --- NEW: GET WEATHER AND PASS TO AI ---
     current_weather = get_live_weather(city)
@@ -98,7 +102,8 @@ async def upload_photo(file: UploadFile = File(...), city: str = Form("Unknown")
         symptom_category=ai_response["category"], 
         description=ai_response["description"], 
         health_score=ai_response["health_score"], 
-        plant_id=plant.id
+        plant_id=plant.id,
+        date=current_ist_time
     )
     db.add(new_diagnosis)
 
