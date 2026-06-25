@@ -110,7 +110,8 @@ with tab2:
                         with st.expander(expander_title, expanded=is_latest):
                             col1, col2 = st.columns([1, 2])
                             with col1:
-                                st.image(record['photo_path'], caption=f"Photo from {record['date']}", use_container_width=True)
+                                image_url = f"https://plant-doctor-buxp.onrender.com/{record['photo_path']}"
+                                st.image(image_url, caption=f"Photo from {record['date']}", use_container_width=True)
 
                                 # --- NEW: INDIVIDUAL RECORD DELETE BUTTON ---
                                 if st.button("🗑️ Delete this Record", key=f"del_rec_{record['id']}", help="Erase this specific visit"):
@@ -156,7 +157,8 @@ with tab2:
                                 col1, col2 = st.columns([1, 2])
                                 with col1:
                                     if match["photo_path"]:
-                                        st.image(match["photo_path"], use_container_width=True)
+                                        search_image_url = f"https://plant-doctor-buxp.onrender.com/{match['photo_path']}"
+                                        st.image(search_image_url, use_container_width=True)
                                 with col2:
                                     st.markdown(f"#### {match['species']} (Record #{match['diagnosis_id']})")
                                     st.metric(label="Match Confidence", value=f"{match['match_accuracy']}%")

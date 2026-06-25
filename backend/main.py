@@ -11,12 +11,14 @@ import math
 import json
 from ai_services import diagnose_plant_with_vision, generate_text_embedding
 from fastapi import HTTPException
+from fastapi.staticfiles import StaticFiles
 
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Plant Doctor API", version="1.0")
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Database gateway dependency
 def get_db():
