@@ -111,7 +111,6 @@ async def upload_photo(file: UploadFile = File(...), city: str = Form("Unknown")
         health_score=ai_response["health_score"], 
         embedding=serialized_vector,
         plant_id=plant.id,
-        date=current_ist_time  # <--- The IST time is successfully saved to the database here!
     )
     db.add(new_diagnosis)
     
@@ -146,8 +145,12 @@ def get_all_plants(db: Session = Depends(get_db)):
             # The zip() function perfectly pairs the photo with its matching diagnosis
             for photo, diagnosis in zip(all_photos, all_diagnoses):
                 
-                # Format the timestamp so it looks pretty (e.g., "June 25, 2026 - 14:30")
-                nice_date = photo.taken_at.strftime("%B %d, %Y - %H:%M") if photo.taken_at else "Unknown Date"
+                # Convert UTC to IST before sending to frontend
+                if photo.taken_at:
+                    ist_time = photo.taken_at + timedelta(hours=5, minutes=30)
+                    nice_date = ist_time.strftime("%B %d, %Y - %H:%M")
+                else:
+                    nice_date = "Unknown Date"
                 
                 history_list.append({
                     "id": diagnosis.id,
