@@ -208,9 +208,9 @@ async def upload_photo(file: UploadFile = File(...), city: str = Form("Unknown")
     }
 
 @app.get("/plants/")
-def get_all_plants(db: Session = Depends(get_db)):
-    # 1. Fetch every plant
-    plants = db.query(models.Plant).all()
+def get_all_plants(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    # 1. Fetch ONLY the plants belonging to the currently logged-in user
+    plants = db.query(models.Plant).filter(models.Plant.owner_id == current_user.id).all()
     dashboard_data = []
     
     for plant in plants:
