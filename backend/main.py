@@ -16,6 +16,7 @@ from ai_services import diagnose_plant_with_vision, generate_text_embedding
 from fastapi import HTTPException
 from fastapi.staticfiles import StaticFiles
 from datetime import datetime, timezone, timedelta
+from typing import Optional 
 
 
 # Create database tables
@@ -134,58 +135,87 @@ def login_for_access_token(username: str = Form(...), password: str = Form(...),
 
 # Add city: str = Form(...) to the parameters
 @app.post("/upload-photo/")
-async def upload_photo(file: UploadFile = File(...), city: str = Form("Unknown"), db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+async def upload_photo(
+    file: UploadFile = File(...), 
+    city: str = Form("Unknown"), 
+    triage_answer: Optional[str] = Form(None), # The new microphone input
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(get_current_user)
+):
+    # 1. Save file temporarily so the AI can look at it
     file_location = f"uploads/{file.filename}"
     with open(file_location, "wb+") as file_object:
         shutil.copyfileobj(file.file, file_object)
         
-    # Only find a plant if it belongs to the logged-in user!
+    # 2. Look up existing plant and history (YOUR EXACT LOGIC)
     plant = db.query(models.Plant).filter(models.Plant.owner_id == current_user.id).first()
     previous_diagnosis_text = None
-    previous_photo_path = None  # Add this empty variable!
+    previous_photo_path = None
     
-    if not plant:
-        # THE FIX: We MUST stamp the new plant with the user's ID right here!
-        plant = models.Plant(location="Indoor", species="Pending AI ID", owner_id=current_user.id)
-        db.add(plant)
-        db.commit()
-        db.refresh(plant)
-    else:
-        # Get the text of the last visit
+    if plant:
         last_diagnosis = db.query(models.Diagnosis).filter(models.Diagnosis.plant_id == plant.id).order_by(models.Diagnosis.id.desc()).first()
         if last_diagnosis:
             previous_diagnosis_text = last_diagnosis.description
             
-        # Get the PHOTO of the last visit!
         last_photo = db.query(models.Photo).filter(models.Photo.plant_id == plant.id).order_by(models.Photo.id.desc()).first()
         if last_photo:
             previous_photo_path = last_photo.filepath
-            
-    # Save the new photo...
+
+    # 3. Get weather and context (YOUR EXACT LOGIC + The Answer)
+    current_weather = get_live_weather(city)
+    if triage_answer:
+        current_weather += f" | USER ANSWERED TRIAGE QUESTION: '{triage_answer}'"
+
+    # 4. RUN THE AI FIRST (Do not touch the database yet!)
+    ai_response = diagnose_plant_with_vision(
+        image_path=file_location, 
+        previous_image_path=previous_photo_path,
+        previous_diagnosis=previous_diagnosis_text,
+        environment_data=current_weather,
+        skip_triage=bool(triage_answer) # Skip the nurse if answering a question
+    )
+    
+    if "error" in ai_response:
+        import os
+        os.remove(file_location) # Clean up temp file
+        return {"message": "AI Error", "diagnosis": ai_response["error"]}
+
+    # 5. THE CATCH: If it's a Triage Interruption, abort before saving!
+    if ai_response.get("category") == "Triage":
+        import os
+        os.remove(file_location) # Delete the temp file so it doesn't waste space
+        return {
+            "message": "Success", 
+            "filename": file.filename,
+            "diagnosis_data": ai_response, 
+            "weather_context": current_weather
+        }
+
+    # ==========================================
+    # 6. DOCTOR DIAGNOSIS CONFIRMED. SAVE EVERYTHING TO DB!
+    # ==========================================
+    
+    # Update or Create Plant
+    if not plant:
+        plant = models.Plant(location="Indoor", species=ai_response.get("species", "Pending AI ID"), owner_id=current_user.id)
+        db.add(plant)
+        db.commit()
+        db.refresh(plant)
+    else:
+        plant.species = ai_response["species"]
+        db.commit()
+
+    # Save the new photo
     new_photo = models.Photo(filepath=file_location, plant_id=plant.id)
     db.add(new_photo)
     db.commit()
 
-    # --- GET WEATHER AND PASS BOTH PHOTOS TO AI ---
-    current_weather = get_live_weather(city)
-    ai_response = diagnose_plant_with_vision(
-        image_path=file_location, 
-        previous_image_path=previous_photo_path, # Feed it into the AI engine!
-        previous_diagnosis=previous_diagnosis_text,
-        environment_data=current_weather
-    )
-    
-    if "error" in ai_response:
-        return {"message": "AI Error", "diagnosis": ai_response["error"]}
-
-    plant.species = ai_response["species"]
-    db.commit()
-
-    # --- VECTOR GENERATION ---
+    # Vector Generation (YOUR EXACT LOGIC)
     description_text = ai_response["description"]
     vector_array = generate_text_embedding(description_text)
     serialized_vector = json.dumps(vector_array) if vector_array else None
 
+    # Save Diagnosis (YOUR EXACT LOGIC)
     new_diagnosis = models.Diagnosis(
         symptom_category=ai_response["category"], 
         description=description_text, 
@@ -195,6 +225,7 @@ async def upload_photo(file: UploadFile = File(...), city: str = Form("Unknown")
     )
     db.add(new_diagnosis)
     
+    # Save Care Tasks (YOUR EXACT LOGIC)
     for task_text in ai_response["tasks"]:
         new_task = models.CareTask(task_description=task_text, plant_id=plant.id)
         db.add(new_task)

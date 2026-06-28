@@ -142,15 +142,21 @@ ai_app = workflow.compile()
 # ==========================================
 # 6. THE MAIN FASTAPI EXPORT
 # ==========================================
-def diagnose_plant_with_vision(image_path: str, previous_image_path: str = None, previous_diagnosis: str = None, environment_data: str = None):
+def diagnose_plant_with_vision(image_path: str, previous_image_path: str = None, previous_diagnosis: str = None, environment_data: str = None, skip_triage: bool = False):
     try:
-        # Feed the data into the LangGraph workflow
         inputs = {
             "image_path": image_path,
             "previous_image_path": previous_image_path,
             "previous_diagnosis": previous_diagnosis,
             "environment_data": environment_data
         }
+        
+        # THE BYPASS: If the user answered the question, send them straight to the Doctor!
+        if skip_triage:
+            result = doctor_agent(inputs)
+            return result["final_result"]
+            
+        # Normal Flow: Start at the Triage Nurse
         result = ai_app.invoke(inputs)
         return result["final_result"]
     except Exception as e:

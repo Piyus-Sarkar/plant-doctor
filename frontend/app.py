@@ -88,50 +88,80 @@ with tab1:
         if "current_diagnosis" in st.session_state:
             result = st.session_state["current_diagnosis"]
             
-            # --- NEW: Catch the AI Error explicitly ---
+            # --- Catch the AI Error explicitly ---
             if result.get("message") == "AI Error":
                 st.error(f"⚠️ AI System Error: {result.get('diagnosis')}")
             else:
-                # Normal successful display
-                st.success("Diagnosis Complete!")
-                
                 data = result.get("diagnosis_data", {})
+                category = data.get('category', 'General')
+                description = data.get('description', '')
                 
-                st.markdown(f"### 🪴 Species: {data.get('species', 'Unknown')}")
-            
-            # Vitality Score
-            score = data.get('health_score', 0)
-            st.metric(label="Vitality Score", value=f"{score}%")
-            st.progress(score / 100.0)
-            
-            # Weather & Diagnosis
-            st.info(f"🌤️ **Live Context Used:** {result.get('weather_context', 'Unknown')}")
-            st.info(f"**Diagnosis ({data.get('category', 'General')}):** {data.get('description', '')}")
-            
-            # Interactive Checklist
-            st.markdown("### 📋 Action Plan")
-            for index, task in enumerate(data.get('tasks', [])):
-                st.checkbox(task, key=f"task_{index}")
+                # --- SCENARIO 1: TRIAGE REJECT ---
+                if category == "Triage" and "REJECT" in description.upper():
+                    st.error("❌ AI Triage: Image Rejected")
+                    st.write(f"**Reason:** {description}")
+                    st.info("💡 Please click the 'X' on your uploaded file above and upload a clearer photo!")
+                    
+                # --- SCENARIO 2: TRIAGE CLARIFY ---
+                elif category == "Triage" and "CLARIFY" in description.upper():
+                    st.warning("⚠️ AI Triage: Clarification Needed")
+                    st.write(f"**Question:** {description}")
+                    
+                    # --- THE TAB 1 MICROPHONE ---
+                    triage_answer = st.text_input("Your Answer:")
+                    if st.button("Submit Answer to Doctor", type="primary"):
+                        with st.spinner("Sending to Doctor..."):
+                            # We send the EXACT same file, but this time we add the answer!
+                            files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+                            form_data = {"city": city_input, "triage_answer": triage_answer} 
+                            auth_headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+                            
+                            response = requests.post("https://plant-doctor-buxp.onrender.com/upload-photo/", files=files, data=form_data, headers=auth_headers)
+                            
+                            if response.status_code == 200:
+                                st.session_state["current_diagnosis"] = response.json()
+                                st.rerun()
+                            else:
+                                st.error("Server Error while sending answer.")
+                                
+                # --- SCENARIO 3: NORMAL DIAGNOSIS ---
+                else:
+                    st.success("Diagnosis Complete!")
+                    st.markdown(f"### 🪴 Species: {data.get('species', 'Unknown')}")
+                
+                    # Vitality Score
+                    score = data.get('health_score', 0)
+                    st.metric(label="Vitality Score", value=f"{score}%")
+                    st.progress(score / 100.0)
+                    
+                    # Weather & Diagnosis
+                    st.info(f"🌤️ **Live Context Used:** {result.get('weather_context', 'Unknown')}")
+                    st.info(f"**Diagnosis ({category}):** {description}")
+                    
+                    # Interactive Checklist
+                    st.markdown("### 📋 Action Plan")
+                    for index, task in enumerate(data.get('tasks', [])):
+                        st.checkbox(task, key=f"task_{index}")
 
-            # 5. Downloadable Prescription
-            st.markdown("---")
-            report_text = (
-                f"🪴 PATIENT: {data.get('species', 'Unknown')}\n"
-                f"📊 VITALITY SCORE: {score}%\n"
-                f"🌤️ WEATHER CONTEXT: {result.get('weather_context', 'Unknown')}\n"
-                f"🩺 DIAGNOSIS ({data.get('category', 'General')}): {data.get('description', '')}\n\n"
-                f"📋 ACTION PLAN:\n"
-            )
-            for task in data.get('tasks', []):
-                report_text += f"- {task}\n"
-                
-            st.download_button(
-                label="📄 Download Official Care Plan",
-                data=report_text,
-                file_name=f"{data.get('species', 'Plant').replace(' ', '_')}_Prescription.txt",
-                mime="text/plain",
-                type="secondary"
-            )
+                    # 5. Downloadable Prescription
+                    st.markdown("---")
+                    report_text = (
+                        f"🪴 PATIENT: {data.get('species', 'Unknown')}\n"
+                        f"📊 VITALITY SCORE: {score}%\n"
+                        f"🌤️ WEATHER CONTEXT: {result.get('weather_context', 'Unknown')}\n"
+                        f"🩺 DIAGNOSIS ({category}): {description}\n\n"
+                        f"📋 ACTION PLAN:\n"
+                    )
+                    for task in data.get('tasks', []):
+                        report_text += f"- {task}\n"
+                        
+                    st.download_button(
+                        label="📄 Download Official Care Plan",
+                        data=report_text,
+                        file_name=f"{data.get('species', 'Plant').replace(' ', '_')}_Prescription.txt",
+                        mime="text/plain",
+                        type="secondary"
+                    )
 
 # --- TAB 2: THE DASHBOARD ---
 with tab2:
