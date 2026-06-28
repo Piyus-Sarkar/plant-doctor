@@ -19,6 +19,12 @@ from datetime import datetime, timezone, timedelta
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Plant Doctor API", version="1.0")
+import os
+
+# Make absolutely sure the folder exists so the server never crashes
+if not os.path.exists("uploads"):
+    os.makedirs("uploads")
+
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Database gateway dependency
