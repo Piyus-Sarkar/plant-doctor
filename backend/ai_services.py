@@ -15,9 +15,9 @@ if not api_key:
 genai.configure(api_key=api_key)
 
 # Change the function definition to accept environment_data
-def diagnose_plant_with_vision(image_path: str, previous_diagnosis: str = None, environment_data: str = None):
+def diagnose_plant_with_vision(image_path: str, previous_image_path: str = None, previous_diagnosis: str = None, environment_data: str = None):
     try:
-        img = Image.open(image_path)
+        current_img = Image.open(image_path)
         
         model = genai.GenerativeModel(
             'gemini-2.5-flash',
@@ -25,23 +25,34 @@ def diagnose_plant_with_vision(image_path: str, previous_diagnosis: str = None, 
         )
         
         prompt = (
-            "You are a master botanist. Analyze this plant image. "
+            "You are a master botanist. Analyze the plant image(s) provided. "
             "You MUST return a raw JSON object with exactly these 5 keys: "
             "1. 'species': The name of the plant. "
             "2. 'category': ONE word [Water, Light, Pest, Nutrient, Disease, Healthy]. "
-            "3. 'description': A 2-sentence medical diagnosis. "
+            "3. 'description': A 2-sentence medical diagnosis. If two images are provided, explicitly state if the plant is recovering or degrading compared to the past image. "
             "4. 'health_score': An integer from 0 to 100 representing the plant's vitality. "
             "5. 'tasks': A Python list containing exactly 3 short, actionable care steps. "
         )
         
-        # --- NEW: INJECT LIVE WEATHER CONTEXT ---
         if environment_data:
             prompt += f"\n\nENVIRONMENTAL CONTEXT: The plant is currently located in {environment_data}. Consider this live weather data in your diagnosis and care plan."
             
         if previous_diagnosis:
             prompt += f"\n\nMEDICAL HISTORY: Last week's diagnosis was: '{previous_diagnosis}'."
+
+        # --- NEW: THE 2-IMAGE COMPARISON PAYLOAD ---
+        payload = [prompt]
+        
+        # If we have a past image on the hard drive, load it and send BOTH!
+        if previous_image_path and os.path.exists(previous_image_path):
+            prompt += "\n\nVISUAL HISTORY: I have provided TWO images. The FIRST image is the PAST state. The SECOND image is the CURRENT state today. Compare them to track recovery!"
+            old_img = Image.open(previous_image_path)
+            payload.extend([old_img, current_img]) 
+        else:
+            # First time visit, just send the current image
+            payload.append(current_img)
             
-        response = model.generate_content([prompt, img])
+        response = model.generate_content(payload)
         return json.loads(response.text)
         
     except Exception as e:

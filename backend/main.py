@@ -72,6 +72,7 @@ async def upload_photo(file: UploadFile = File(...), city: str = Form("Unknown")
         
     plant = db.query(models.Plant).first()
     previous_diagnosis_text = None
+    previous_photo_path = None  # Add this empty variable!
     
     if not plant:
         plant = models.Plant(location="Indoor", species="Pending AI ID")
@@ -79,22 +80,26 @@ async def upload_photo(file: UploadFile = File(...), city: str = Form("Unknown")
         db.commit()
         db.refresh(plant)
     else:
+        # Get the text of the last visit
         last_diagnosis = db.query(models.Diagnosis).filter(models.Diagnosis.plant_id == plant.id).order_by(models.Diagnosis.id.desc()).first()
         if last_diagnosis:
             previous_diagnosis_text = last_diagnosis.description
             
+        # Get the PHOTO of the last visit!
+        last_photo = db.query(models.Photo).filter(models.Photo.plant_id == plant.id).order_by(models.Photo.id.desc()).first()
+        if last_photo:
+            previous_photo_path = last_photo.filepath
+            
+    # Save the new photo...
     new_photo = models.Photo(filepath=file_location, plant_id=plant.id)
     db.add(new_photo)
     db.commit()
 
-    # --- FORCED IST TIMEZONE ---
-    ist_timezone = timezone(timedelta(hours=5, minutes=30))
-    current_ist_time = datetime.now(ist_timezone).strftime("%B %d, %Y - %H:%M")
-
-    # --- GET WEATHER AND PASS TO AI ---
+    # --- GET WEATHER AND PASS BOTH PHOTOS TO AI ---
     current_weather = get_live_weather(city)
     ai_response = diagnose_plant_with_vision(
         image_path=file_location, 
+        previous_image_path=previous_photo_path, # Feed it into the AI engine!
         previous_diagnosis=previous_diagnosis_text,
         environment_data=current_weather
     )
