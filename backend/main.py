@@ -69,6 +69,32 @@ def get_live_weather(city: str):
         # If Render's IP is totally blacklisted by the internet, your demo will STILL work perfectly.
         return f"{safe_city.title()} (Simulated Context: Partly Cloudy, 30°C)"
 
+# --- AUTHENTICATION ROUTES ---
+@app.post("/signup")
+def create_user(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    # Check if user already exists
+    user = db.query(models.User).filter(models.User.username == form_data.username).first()
+    if user:
+        raise HTTPException(status_code=400, detail="Username already registered")
+        
+    # Create new user
+    hashed_password = get_password_hash(form_data.password)
+    new_user = models.User(username=form_data.username, hashed_password=hashed_password)
+    db.add(new_user)
+    db.commit()
+    return {"message": "User created successfully"}
+
+@app.post("/login")
+def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    # Authenticate user
+    user = db.query(models.User).filter(models.User.username == form_data.username).first()
+    if not user or not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Incorrect username or password")
+        
+    # Generate JWT Token
+    access_token = create_access_token(data={"sub": user.username})
+    return {"access_token": access_token, "token_type": "bearer"}
+
 # Add city: str = Form(...) to the parameters
 @app.post("/upload-photo/")
 async def upload_photo(file: UploadFile = File(...), city: str = Form("Unknown"), db: Session = Depends(get_db)):
