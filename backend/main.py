@@ -17,13 +17,20 @@ from fastapi import HTTPException
 from fastapi.staticfiles import StaticFiles
 from datetime import datetime, timezone, timedelta
 from typing import Optional 
+from contextlib import asynccontextmanager
 
+# Define the lifespan logic
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Create tables
+    models.Base.metadata.create_all(bind=engine)
+    yield
+    # Shutdown: Add cleanup code here if needed
+    pass
 
-# Create database tables
-models.Base.metadata.create_all(bind=engine)
+# Pass the lifespan to the FastAPI app
+app = FastAPI(title="Plant Doctor API", version="1.0", lifespan=lifespan)
 
-app = FastAPI(title="Plant Doctor API", version="1.0")
-import os
 
 # Make absolutely sure the folder exists so the server never crashes
 if not os.path.exists("uploads"):

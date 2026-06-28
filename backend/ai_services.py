@@ -166,7 +166,7 @@ def generate_text_embedding(text: str):
     try:
         result = genai.embed_content(
             model="models/text-embedding-004",
-            contents=text,
+            content=text,
             task_type="retrieval_document"
         )
         return result['embedding']
