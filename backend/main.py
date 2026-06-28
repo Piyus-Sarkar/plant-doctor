@@ -1,11 +1,14 @@
 import os
 import shutil
 from fastapi import FastAPI, UploadFile, File, Depends
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from passlib.context import CryptContext
+import jwt
 from sqlalchemy.orm import Session
 from database import engine, SessionLocal
 import models as models
 from ai_services import diagnose_plant_with_vision # Import your Gemini engine!
-from fastapi import FastAPI, UploadFile, File, Depends, Form
+from fastapi import FastAPI, UploadFile, File, Depends, Form, status, Form
 import requests
 import math
 import json
@@ -71,7 +74,7 @@ def get_live_weather(city: str):
 
 # --- AUTHENTICATION ROUTES ---
 @app.post("/signup")
-def create_user(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def create_user(form_data: OAuth2PasswordRequestForm = Depends(OAuth2PasswordRequestForm), db: Session = Depends(get_db)):
     # Check if user already exists
     user = db.query(models.User).filter(models.User.username == form_data.username).first()
     if user:
@@ -85,7 +88,7 @@ def create_user(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
     return {"message": "User created successfully"}
 
 @app.post("/login")
-def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(OAuth2PasswordRequestForm), db: Session = Depends(get_db)):
     # Authenticate user
     user = db.query(models.User).filter(models.User.username == form_data.username).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
