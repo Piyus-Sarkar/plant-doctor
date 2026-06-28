@@ -22,11 +22,11 @@ from contextlib import asynccontextmanager
 # Define the lifespan logic
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Create tables
-    models.Base.metadata.create_all(bind=engine)
+    # Only build the database if it doesn't already exist
+    if not os.path.exists("./plant_doctor.db"): 
+        models.Base.metadata.create_all(bind=engine)
     yield
-    # Shutdown: Add cleanup code here if needed
-    pass
+    # No cleanup needed
 
 # Pass the lifespan to the FastAPI app
 app = FastAPI(title="Plant Doctor API", version="1.0", lifespan=lifespan)
