@@ -5,6 +5,45 @@ import time
 st.set_page_config(page_title="Plant Doctor", page_icon="🌿", layout="centered")
 st.title("🌿 The Plant Doctor")
 
+# --- SECURITY LAYER: LOGIN & SIGNUP ---
+if "access_token" not in st.session_state:
+    st.sidebar.title("🔐 User Access")
+    auth_mode = st.sidebar.radio("Choose Action", ["Login", "Sign Up"])
+    
+    username = st.sidebar.text_input("Username")
+    password = st.sidebar.text_input("Password", type="password")
+
+    if auth_mode == "Sign Up":
+        if st.sidebar.button("Create Account", type="primary"):
+            # Send the new user data to our backend
+            res = requests.post("https://plant-doctor-buxp.onrender.com/signup", data={"username": username, "password": password})
+            if res.status_code == 200:
+                st.sidebar.success("Account created successfully! You can now log in.")
+            else:
+                st.sidebar.error(f"Error: {res.json().get('detail')}")
+
+    elif auth_mode == "Login":
+        if st.sidebar.button("Login", type="primary"):
+            # Ask the backend for the secure JWT token
+            res = requests.post("https://plant-doctor-buxp.onrender.com/login", data={"username": username, "password": password})
+            if res.status_code == 200:
+                st.session_state["access_token"] = res.json().get("access_token")
+                st.sidebar.success("Logged in!")
+                time.sleep(0.5)
+                st.rerun() # Refresh the page to unlock the app
+            else:
+                st.sidebar.error("Invalid username or password")
+
+    # This completely stops the rest of the app from loading if they aren't logged in!
+    st.warning("🔒 Please log in or sign up using the sidebar to access your clinic.")
+    st.stop()
+else:
+    # If they DO have the token, show a Logout button and let the code continue down
+    st.sidebar.success("✅ Logged in securely")
+    if st.sidebar.button("Logout"):
+        st.session_state.pop("access_token")
+        st.rerun()
+
 tab1, tab2 = st.tabs(["🩺 Diagnose Plant", "🪴 My Plants Dashboard"])
 
 # --- TAB 1: THE CLINIC ---
@@ -32,7 +71,8 @@ with tab1:
                 form_data = {"city": city_input} # Sending the city to FastAPI
                 
                 try:
-                    response = requests.post("https://plant-doctor-buxp.onrender.com/upload-photo/", files=files, data=form_data)
+                    auth_headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+                    response = requests.post("https://plant-doctor-buxp.onrender.com/upload-photo/", files=files, data=form_data, headers=auth_headers)
                     if response.status_code == 200:
                         st.session_state["current_diagnosis"] = response.json()
                     else:
@@ -96,7 +136,8 @@ with tab2:
 
     # REMOVED the "st.button" wrapper! The dashboard now loads automatically, fixing the bug.
     try:
-        response = requests.get("https://plant-doctor-buxp.onrender.com/plants/")
+        auth_headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+        response = requests.get("https://plant-doctor-buxp.onrender.com/plants/", headers=auth_headers)
         if response.status_code == 200:
             plants = response.json()
 

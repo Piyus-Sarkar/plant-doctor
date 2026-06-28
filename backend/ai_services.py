@@ -38,7 +38,7 @@ def diagnose_plant_with_vision(image_path: str, previous_image_path: str = None,
             prompt += f"\n\nENVIRONMENTAL CONTEXT: The plant is currently located in {environment_data}. Consider this live weather data in your diagnosis and care plan."
             
         if previous_diagnosis:
-            prompt += f"\n\nMEDICAL HISTORY: Last week's diagnosis was: '{previous_diagnosis}'."
+            prompt += f"\n\nMEDICAL HISTORY: The previous diagnosis for this plant was: '{previous_diagnosis}'."
 
         # --- NEW: THE 2-IMAGE COMPARISON PAYLOAD ---
         payload = [prompt]
