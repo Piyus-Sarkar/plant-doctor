@@ -43,11 +43,17 @@ with tab1:
         # 4. Render the UI from Memory
         if "current_diagnosis" in st.session_state:
             result = st.session_state["current_diagnosis"]
-            st.success("Diagnosis Complete!")
             
-            data = result.get("diagnosis_data", {})
-            
-            st.markdown(f"### 🪴 Species: {data.get('species', 'Unknown')}")
+            # --- NEW: Catch the AI Error explicitly ---
+            if result.get("message") == "AI Error":
+                st.error(f"⚠️ AI System Error: {result.get('diagnosis')}")
+            else:
+                # Normal successful display
+                st.success("Diagnosis Complete!")
+                
+                data = result.get("diagnosis_data", {})
+                
+                st.markdown(f"### 🪴 Species: {data.get('species', 'Unknown')}")
             
             # Vitality Score
             score = data.get('health_score', 0)
