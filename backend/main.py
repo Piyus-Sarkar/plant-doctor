@@ -74,24 +74,24 @@ def get_live_weather(city: str):
 
 # --- AUTHENTICATION ROUTES ---
 @app.post("/signup")
-def create_user(form_data: OAuth2PasswordRequestForm = Depends(OAuth2PasswordRequestForm), db: Session = Depends(get_db)):
+def create_user(username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
     # Check if user already exists
-    user = db.query(models.User).filter(models.User.username == form_data.username).first()
+    user = db.query(models.User).filter(models.User.username == username).first()
     if user:
         raise HTTPException(status_code=400, detail="Username already registered")
         
     # Create new user
-    hashed_password = get_password_hash(form_data.password)
-    new_user = models.User(username=form_data.username, hashed_password=hashed_password)
+    hashed_password = get_password_hash(password)
+    new_user = models.User(username=username, hashed_password=hashed_password)
     db.add(new_user)
     db.commit()
     return {"message": "User created successfully"}
 
 @app.post("/login")
-def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(OAuth2PasswordRequestForm), db: Session = Depends(get_db)):
+def login_for_access_token(username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
     # Authenticate user
-    user = db.query(models.User).filter(models.User.username == form_data.username).first()
-    if not user or not verify_password(form_data.password, user.hashed_password):
+    user = db.query(models.User).filter(models.User.username == username).first()
+    if not user or not verify_password(password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect username or password")
         
     # Generate JWT Token
