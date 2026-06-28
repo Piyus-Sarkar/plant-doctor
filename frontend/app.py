@@ -45,7 +45,7 @@ if "access_token" not in st.session_state:
 else:
     st.sidebar.success("✅ Logged in securely")
     if st.sidebar.button("Logout"):
-        st.session_state.pop("access_token")
+        st.session_state.clear()
         st.rerun()
 
 tab1, tab2 = st.tabs(["🩺 Diagnose Plant", "🪴 My Plants Dashboard"])

@@ -92,6 +92,20 @@ def create_access_token(data: dict):
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+        
+    user = db.query(models.User).filter(models.User.username == username).first()
+    if user is None:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user
+
 # --- AUTHENTICATION ROUTES ---
 @app.post("/signup")
 def create_user(username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
@@ -120,12 +134,13 @@ def login_for_access_token(username: str = Form(...), password: str = Form(...),
 
 # Add city: str = Form(...) to the parameters
 @app.post("/upload-photo/")
-async def upload_photo(file: UploadFile = File(...), city: str = Form("Unknown"), db: Session = Depends(get_db)):
+async def upload_photo(file: UploadFile = File(...), city: str = Form("Unknown"), db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     file_location = f"uploads/{file.filename}"
     with open(file_location, "wb+") as file_object:
         shutil.copyfileobj(file.file, file_object)
         
-    plant = db.query(models.Plant).first()
+    # Only find a plant if it belongs to the logged-in user!
+    plant = db.query(models.Plant).filter(models.Plant.owner_id == current_user.id).first()
     previous_diagnosis_text = None
     previous_photo_path = None  # Add this empty variable!
     
@@ -282,14 +297,17 @@ def semantic_search_case_files(query: str, db: Session = Depends(get_db)):
 
 
 @app.delete("/plants/{plant_id}")
-def delete_plant_record(plant_id: int, db: Session = Depends(get_db)):
-    """Safely deletes a plant by removing individual items one-by-one to prevent SQL locks."""
-    plant = db.query(models.Plant).filter(models.Plant.id == plant_id).first()
+def delete_plant_record(plant_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Safely deletes a plant and all its history, ONLY if the user owns it."""
+    
+    # 1. Look up the plant AND verify ownership (The Security Lock)
+    plant = db.query(models.Plant).filter(models.Plant.id == plant_id, models.Plant.owner_id == current_user.id).first()
+    
     if not plant:
-        raise HTTPException(status_code=404, detail="Plant not found")
+        raise HTTPException(status_code=404, detail="Plant not found or not authorized")
         
     try:
-        # Explicitly delete items one by one instead of bulk deleting
+        # 2. Your original manual cascading delete logic!
         for p in db.query(models.Photo).filter(models.Photo.plant_id == plant_id).all():
             db.delete(p)
             
@@ -299,7 +317,7 @@ def delete_plant_record(plant_id: int, db: Session = Depends(get_db)):
         for t in db.query(models.CareTask).filter(models.CareTask.plant_id == plant_id).all():
             db.delete(t)
             
-        # Finally, delete the plant
+        # 3. Finally, delete the plant
         db.delete(plant)
         db.commit()
         
