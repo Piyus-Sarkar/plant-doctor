@@ -6,6 +6,8 @@ st.set_page_config(page_title="Plant Doctor", page_icon="🌿", layout="centered
 st.title("🌿 The Plant Doctor")
 
 # --- SECURITY LAYER: LOGIN & SIGNUP ---
+
+# 1. The Gatekeeper: Check for the token FIRST
 if "access_token" not in st.session_state:
     st.sidebar.title("🔐 User Access")
     auth_mode = st.sidebar.radio("Choose Action", ["Login", "Sign Up"])
@@ -17,36 +19,28 @@ if "access_token" not in st.session_state:
         if st.sidebar.button("Create Account", type="primary"):
             res = requests.post("https://plant-doctor-buxp.onrender.com/signup", data={"username": username, "password": password})
             if res.status_code == 200:
-                st.sidebar.success("Account created successfully! You can now log in.")
+                st.sidebar.success("Account created! Now select 'Login' to enter.")
             else:
-                # SAFE ERROR CATCHER
-                try:
-                    st.sidebar.error(f"Error: {res.json().get('detail')}")
-                except:
-                    st.sidebar.error(f"Server Error {res.status_code}: Please check Render Logs.")
+                st.sidebar.error("Signup failed. Try a different username.")
 
     elif auth_mode == "Login":
         if st.sidebar.button("Login", type="primary"):
             res = requests.post("https://plant-doctor-buxp.onrender.com/login", data={"username": username, "password": password})
             if res.status_code == 200:
                 st.session_state["access_token"] = res.json().get("access_token")
-                st.sidebar.success("Logged in!")
-                time.sleep(0.5)
                 st.rerun() 
             else:
-                # SAFE ERROR CATCHER
-                try:
-                    st.sidebar.error(f"Error: {res.json().get('detail')}")
-                except:
-                    st.sidebar.error(f"Server Error {res.status_code}: Please check Render Logs.")
+                st.sidebar.error("Invalid username or password.")
 
-    st.warning("🔒 Please log in or sign up using the sidebar to access your clinic.")
-    st.stop()
-else:
-    st.sidebar.success("✅ Logged in securely")
-    if st.sidebar.button("Logout"):
-        st.session_state.clear()
-        st.rerun()
+    st.warning("🔒 Please login to access your plant clinic.")
+    st.stop() # CRITICAL: This stops the rest of the script from loading
+
+# 2. If we reach this point, the user is authenticated!
+st.sidebar.success("✅ Logged in securely")
+if st.sidebar.button("Logout"):
+    st.session_state.clear()
+    st.rerun()
+
 
 tab1, tab2 = st.tabs(["🩺 Diagnose Plant", "🪴 My Plants Dashboard"])
 

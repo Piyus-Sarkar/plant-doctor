@@ -40,13 +40,12 @@ def triage_agent(state: AgentState):
     model = genai.GenerativeModel('gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
     
     prompt = (
-        "You are the Triage Nurse for a plant clinic. Analyze this image. "
-        "Return a raw JSON object with exactly two keys: "
-        "1. 'decision': ONE word: [Proceed, Clarify, Reject]. "
-        "   - Reject: If the image is blurry, completely dark, or obviously NOT a plant (e.g., a dog, a person, a cup). "
-        "   - Clarify: If it IS a plant, but symptoms are ambiguous (e.g., ask 'How often do you water this?' or 'Are there bugs?'). "
-        "   - Proceed: If it is a clear plant picture ready for a medical diagnosis. "
-        "2. 'message': If Clarify, write your specific question. If Reject, explain why. If Proceed, leave blank."
+        "You are the Triage Nurse for a plant clinic. "
+        "Analyze this image. Your goal is to collect essential care data BEFORE the doctor diagnoses. "
+        "Return a raw JSON object with exactly two keys: 'decision' and 'message'. "
+        "1. If image is blurry/not a plant: decision='Reject', message='Explain why'. "
+        "2. If it IS a clear plant: decision='Clarify', message='Ask 2 specific, mandatory questions: How often do you water this, and how much sunlight does it get?'. "
+        "3. Only use 'Proceed' if you already have the answers to those two questions in the context."
     )
     
     try:
