@@ -145,7 +145,8 @@ async def upload_photo(file: UploadFile = File(...), city: str = Form("Unknown")
     previous_photo_path = None  # Add this empty variable!
     
     if not plant:
-        plant = models.Plant(location="Indoor", species="Pending AI ID")
+        # THE FIX: We MUST stamp the new plant with the user's ID right here!
+        plant = models.Plant(location="Indoor", species="Pending AI ID", owner_id=current_user.id)
         db.add(plant)
         db.commit()
         db.refresh(plant)
