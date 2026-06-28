@@ -72,6 +72,25 @@ def get_live_weather(city: str):
         # If Render's IP is totally blacklisted by the internet, your demo will STILL work perfectly.
         return f"{safe_city.title()} (Simulated Context: Partly Cloudy, 30°C)"
 
+# --- SECURITY TOOLS ---
+SECRET_KEY = "super_secret_capstone_key_do_not_share"
+ALGORITHM = "HS256"
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
+
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(days=7)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
 # --- AUTHENTICATION ROUTES ---
 @app.post("/signup")
 def create_user(username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
