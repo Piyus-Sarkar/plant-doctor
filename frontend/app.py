@@ -15,30 +15,34 @@ if "access_token" not in st.session_state:
 
     if auth_mode == "Sign Up":
         if st.sidebar.button("Create Account", type="primary"):
-            # Send the new user data to our backend
             res = requests.post("https://plant-doctor-buxp.onrender.com/signup", data={"username": username, "password": password})
             if res.status_code == 200:
                 st.sidebar.success("Account created successfully! You can now log in.")
             else:
-                st.sidebar.error(f"Error: {res.json().get('detail')}")
+                # SAFE ERROR CATCHER
+                try:
+                    st.sidebar.error(f"Error: {res.json().get('detail')}")
+                except:
+                    st.sidebar.error(f"Server Error {res.status_code}: Please check Render Logs.")
 
     elif auth_mode == "Login":
         if st.sidebar.button("Login", type="primary"):
-            # Ask the backend for the secure JWT token
             res = requests.post("https://plant-doctor-buxp.onrender.com/login", data={"username": username, "password": password})
             if res.status_code == 200:
                 st.session_state["access_token"] = res.json().get("access_token")
                 st.sidebar.success("Logged in!")
                 time.sleep(0.5)
-                st.rerun() # Refresh the page to unlock the app
+                st.rerun() 
             else:
-                st.sidebar.error("Invalid username or password")
+                # SAFE ERROR CATCHER
+                try:
+                    st.sidebar.error(f"Error: {res.json().get('detail')}")
+                except:
+                    st.sidebar.error(f"Server Error {res.status_code}: Please check Render Logs.")
 
-    # This completely stops the rest of the app from loading if they aren't logged in!
     st.warning("🔒 Please log in or sign up using the sidebar to access your clinic.")
     st.stop()
 else:
-    # If they DO have the token, show a Logout button and let the code continue down
     st.sidebar.success("✅ Logged in securely")
     if st.sidebar.button("Logout"):
         st.session_state.pop("access_token")
