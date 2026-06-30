@@ -4,7 +4,7 @@
 https://piyus-plant-doctor.streamlit.app/
 
 ## 📌 Project Overview
-The Plant Doctor is a stateful, full-stack web application designed to diagnose plant health issues using advanced multimodal AI. Users can upload images of their houseplants, and the system instantly identifies the species, diagnoses cellular distress (e.g., chlorosis, necrosis), calculates a quantitative Vitality Score, and generates an interactive care plan.
+The Plant Doctor is a secure, stateful, full-stack web application designed to diagnose plant health issues using advanced multimodal AI. Users can create secure accounts to upload images of their houseplants, and the system uses an Agentic AI workflow to first triage the image quality, and then diagnose cellular distress, calculate a quantitative Vitality Score, and generate an interactive care plan.
 
 This project was built as a Capstone Submission for the IIT Roorkee New Age Software Engineering certification.
 
@@ -13,16 +13,20 @@ This application is decoupled into a high-performance backend API and a dynamic 
 
 * **Frontend:** Streamlit (Python) - Handles complex state management, session memory, and UI rendering.
 * **Backend:** FastAPI (Python) - High-performance asynchronous API for routing and business logic.
-* **Database:** SQLite & SQLAlchemy (ORM) - Relational database maintaining a longitudinal medical history of plants, photos, and diagnoses.
+* **Agentic Workflow:** LangGraph - Implements a multi-agent StateGraph (Triage Nurse -> Plant Doctor) to handle dynamic user interruptions and data validation.
+* **Security Layer:** Bcrypt & PyJWT - Handles cryptographic password hashing, JWT access tokens, and strict multi-user data isolation.
+* **Database:** SQLite & SQLAlchemy (ORM) - Relational database maintaining an isolated, longitudinal medical history of plants for each authenticated user.
 * **AI Engine:** Google Gemini 2.5 Flash Vision API - Processes raw image bytes and system prompts to generate structured JSON botanical analysis.
 * **Vector Engine:** Google text-embedding-004 - Generates 768-dimensional mathematical arrays for semantic searching.
 
 ## 🚀 Key Engineering Features
-1. **Multimodal Diagnostics:** Analyzes physical plant photos using Google's latest Vision models.
-2. **Live Microclimate Context:** Injects live satellite weather data (Open-Meteo API) based on the user's city so the AI understands environmental stressors before diagnosing.
-3. **Semantic Vector Search:** Computes native cosine similarity against vectorized historical case logs, allowing users to search their database using natural conceptual phrases rather than exact keywords.
-4. **Stateful Medical History & CRUD:** Full database integration tracks plant recovery over time. Features cascading relational deletion to safely erase specific visits without locking the database.
-5. **Interactive Action Plans:** Generates dynamically rendered, checklist-based treatment plans and downloadable text prescriptions.
+1. **Agentic AI Triage (LangGraph):** Employs a Human-in-the-Loop workflow. A "Triage Agent" intercepts uploads, rejects non-plant/blurry images, and asks clarifying questions (e.g., watering habits) before routing the context to the Doctor Agent.
+2. **Longitudinal Visual History:** The AI automatically pulls the user's previous plant photo from the database and runs a 2-image multimodal comparison to explicitly track recovery or degradation over time.
+3. **Secure Multi-User Architecture:** Features JWT-based authentication and Bcrypt password hashing. Database queries are strictly scoped to the owner_id, ensuring complete data privacy and preventing cross-user data bleeding.
+4. **Live Microclimate Context:** Injects live satellite weather data (Open-Meteo API) based on the user's city so the AI understands environmental stressors before diagnosing.
+5. **Semantic Vector Search:** Computes native cosine similarity against vectorized historical case logs (Google text-embedding-004), allowing users to search their database using natural conceptual phrases rather than exact keywords.
+6. **"Lazy" Database Writing:** Optimized backend architecture ensures that temporary files and interrupted triage sessions are cleared from memory and never corrupt the SQL database until a final medical diagnosis is reached.
+7. **Interactive Action Plans:** Generates dynamically rendered, checklist-based treatment plans and downloadable text prescriptions.
 
 ## 💻 Local Installation & Setup
 
@@ -47,7 +51,9 @@ GEMINI_API_KEY=your_api_key_here
 **5. Launch the Application (Requires Two Terminals)**
 
 Terminal 1 (The Backend API):
+cd backend
 uvicorn main:app --reload
 
 Terminal 2 (The Frontend Dashboard):
+cd frontend
 streamlit run app.py
